@@ -796,10 +796,6 @@ EJ_BIND_FUNCTION(EJBindingCanvas, drawImage, ctx, argc, argv) {
  	}
  	EJCanvasPattern *pattern = new EJCanvasPattern(image, repeat); // [[[EJCanvasPattern alloc] initWithTexture:image repeat:repeat] autorelease];
 
-
- 	EJBindingCanvasPattern* tempBinding = new EJBindingCanvasPattern();
-  	JSClassRef bindingClass = EJApp::instance()->getJSClassForClass((EJBindingCanvasPattern*)tempBinding);
-
  	JSObjectRef obj = EJBindingCanvasPattern::createJSObjectWithContext(ctx, pattern);
  	return obj;
 }

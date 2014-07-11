@@ -30,13 +30,7 @@ JSObjectRef EJBindingCanvasPattern::createJSObjectWithContext(JSContextRef ctx, 
 	EJBindingCanvasPattern* binding = new EJBindingCanvasPattern(ctx, NULL, 0, NULL);
 	pPattern->retain();
 	binding->pattern = pPattern;
- 	// Create the JS object
- 	JSClassRef bindingClass = EJApp::instance()->getJSClassForClass(binding);
- 	JSObjectRef obj = JSObjectMake( ctx, bindingClass, NULL );
- 	JSValueProtect(ctx, obj);
- 	// Attach the native instance to the js object
- 	JSObjectSetPrivate( obj, (void *)binding );
- 	JSValueUnprotect(ctx, obj);
+	JSObjectRef obj = EJBindingBase::createJSObjectWithContext(ctx, (EJBindingBase*)binding);
 
 	return obj;
 }
