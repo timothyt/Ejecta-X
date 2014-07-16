@@ -31,3 +31,4 @@ libs/
 # Gradle Files
 .gradle/
 
+project/android/obj
