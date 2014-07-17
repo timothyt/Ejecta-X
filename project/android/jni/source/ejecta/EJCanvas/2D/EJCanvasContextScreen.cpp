@@ -18,21 +18,78 @@ EJCanvasContextScreen::~EJCanvasContextScreen()
 
 }
 
+void EJCanvasContextScreen::resizeToWidth(short newWidth, short newHeight)
+{
+	width = newWidth;
+	height = newHeight;
+
+	CGSize screen = {width, height};
+	CGRect frame = {0, 0, screen};
+
+    float contentScale = 1;
+
+	float aspect = (float)frame.size.width / (float)frame.size.height;
+
+	if( scalingMode == kEJScalingModeFitWidth ) {
+		frame.size.width = screen.width;
+		frame.size.height = (int)(screen.width / aspect);
+	}
+	else if( scalingMode == kEJScalingModeFitHeight ) {
+		frame.size.width = (int)(screen.height * aspect);
+		frame.size.height = screen.height;
+	}
+	float internalScaling = frame.size.width / (float)width;
+	EJApp::instance()->internalScaling = internalScaling;
+	
+    backingStoreRatio = internalScaling * contentScale;
+	
+	bufferWidth = (short)(frame.size.width * contentScale);
+	bufferHeight = (short)(frame.size.height * contentScale);
+	
+	NSLOG(
+		"====    Creating ScreenCanvas    ==== \n**    size: %dx%d, aspect ratio: %.3f, \n**    scaled: %.3f = %dx%d, \n**    retina: no = %.0fx%.0f, \n**    msaa: no\n=====================================",
+		width, height, aspect, 
+		internalScaling, frame.size.width, frame.size.height,
+		frame.size.width * contentScale, frame.size.height * contentScale
+	);
+	
+	// We don't this setup that iOS uses. Android sets up the view and framebuffer for us
+/*	if( !glview ) {
+		// Create the OpenGL UIView with final screen size and content scaling (retina)
+		glview = [[EAGLView alloc] initWithFrame:frame contentScale:contentScale retainedBacking:NO];
+
+		// Append the OpenGL view to Ejecta's main view
+		[scriptView addSubview:glview];
+	}
+	else {
+		// Resize an existing view
+		glview.frame = frame;
+	}
+	
+	// Set up the renderbuffer
+	[glContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:(CAEAGLLayer *)glview.layer];
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, viewRenderBuffer);
+*/
+	// Flip the screen - OpenGL has the origin in the bottom left corner. We want the top left.
+    upsideDown = true;
+
+    resetFramebuffer();
+
+    // Append the OpenGL view to Impact's main view
+    EJApp::instance()->hideLoadingScreen();
+}
+
+void EJCanvasContextScreen::finish()
+{
+	glFinish();
+}
+
 void EJCanvasContextScreen::present()
 {
-	glViewport(0, 0, width, height);
-
-#ifdef _WINDOWS
-	glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0 );
-	glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, 0 );
-#else
-	glBindFramebuffer(GL_FRAMEBUFFER, 0 );
-	glBindRenderbuffer(GL_RENDERBUFFER, 0 );
-#endif	
-
-	// [self flushBuffers];
 	EJCanvasContext::flushBuffers();
-	
+
+	if( !needsPresenting ) { return; }
+
 	if( msaaEnabled ) {
 #ifdef _WINDOWS
 		//Bind the MSAA and View frameBuffers and resolve
@@ -59,89 +116,8 @@ void EJCanvasContextScreen::present()
 #endif
 	}
 	else {
-	}	
-}
-
-void EJCanvasContextScreen::finish()
-{
-	glFinish();	
-}
-
-void EJCanvasContextScreen::create()
-{
-
-	int m_width = EJApp::instance()->width;
-	int m_height = EJApp::instance()->height;
-
-	CGSize screen = {m_width, m_height};
-	CGRect frame = {0, 0, screen};
-// 	CGSize screen = [EJApp instance].view.bounds.size;
-    float contentScale = 1;
-    // useRetinaResolution
-	float aspect = (float)frame.size.width / (float)frame.size.height;
-
-	if( scalingMode == kEJScalingModeFitWidth ) {
-		frame.size.width = screen.width;
-		frame.size.height = (int)(screen.width / aspect);
 	}
-	else if( scalingMode == kEJScalingModeFitHeight ) {
-		frame.size.width = (int)(screen.height * aspect);
-		frame.size.height = screen.height;
-	}
-	float internalScaling = frame.size.width / (float)width;
-	EJApp::instance()->internalScaling = internalScaling;
-	
-    backingStoreRatio = internalScaling * contentScale;
-	
-	bufferWidth = (short)(frame.size.width * contentScale);
-	bufferHeight = (short)(frame.size.height * contentScale);
-	
-	NSLOG(
-		"====    Creating ScreenCanvas    ==== \n**    size: %dx%d, aspect ratio: %.3f, \n**    scaled: %.3f = %dx%d, \n**    retina: no = %.0fx%.0f, \n**    msaa: no\n=====================================",
-		width, height, aspect, 
-		internalScaling, frame.size.width, frame.size.height,
-		frame.size.width * contentScale, frame.size.height * contentScale
-	);
-	
-// 	// Create the OpenGL UIView with final screen size and content scaling (retina)
-// 	glview = [[EAGLView alloc] initWithFrame:frame contentScale:contentScale];
-	
-// 	// This creates the frame- and renderbuffers
-// 	[super create];
-	EJCanvasContext::create();
-	
-// 	// Set up the renderbuffer and some initial OpenGL properties
-// 	[[EJApp instance].glContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:(CAEAGLLayer *)glview.layer];
-// 	glFramebufferRenderbuffer(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER_EXT, viewRenderBuffer);
-	
-
-	glDisable(GL_CULL_FACE);
-	glDisable(GL_DITHER);
-
-	glEnable(GL_BLEND);
-	glEnable(GL_DEPTH_TEST);
-	glDepthFunc(GL_ALWAYS);
-
-    upsideDown = true;
-
-	prepare();
-	
-	glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
-    //Removed because Framebuffer doesn't seem to be ready, causing an error
-    //glClear(GL_COLOR_BUFFER_BIT);
-
-// 	// Append the OpenGL view to Impact's main view
-    EJApp::instance()->hideLoadingScreen();
-}
-
-void EJCanvasContextScreen::resizeToWidth(short newWidth, short newHeight) {
-	// TODO: Implement it 
-}
-
-
-void EJCanvasContextScreen::prepare()
-{
-	EJCanvasContext::prepare();
+	needsPresenting = false;
 }
 
 EJImageData* EJCanvasContextScreen::getImageData(float sx, float sy, float sw, float sh)

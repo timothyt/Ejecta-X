@@ -136,6 +136,8 @@ protected:
 	short width, height;
 	short bufferWidth, bufferHeight;
 	
+	bool needsPresenting;
+
 	EJTexture * currentTexture;
 	
 	EJPath * path;
@@ -170,7 +172,7 @@ public:
 	~EJCanvasContext();
 	virtual void create();
 	virtual void resizeToWidth(short newWidth, short newHeight);
-	void setScreenSize(int widthp, int heightp);
+	void resetFramebuffer();
 	void createStencilBufferOnce();
 	void bindVertexBuffer();
 	virtual void prepare();
