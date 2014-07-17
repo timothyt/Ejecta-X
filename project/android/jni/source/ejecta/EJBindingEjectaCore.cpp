@@ -101,5 +101,10 @@ EJ_BIND_GET(EJBindingEjectaCore,onLine, ctx) {
 	NSLOG("onLine Not Implemented.and return true");
 	return JSValueMakeBoolean(ctx, true);
 }
+//
+EJ_BIND_FUNCTION(EJBindingEjectaCore,setDrawDelegate, ctx, argc, argv ) {
+	EJApp::instance()->setDrawDelegate(ctx,argc,argv);
+	return NULL;
+}
 
 REFECTION_CLASS_IMPLEMENT(EJBindingEjectaCore);
