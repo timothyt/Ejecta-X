@@ -57,6 +57,7 @@ private:
     long currentTime;
     EJSharedOpenGLContext *openGLContext;
     static EJApp *ejectaInstance;
+    JSObjectRef drawDelegate;
 
     bool doesFileExist(const char *filename);
 
@@ -87,6 +88,7 @@ public:
     JSValueRef createTimer(JSContextRef ctx, size_t argc, const JSValueRef argv[], BOOL repeat);
     JSValueRef deleteTimer(JSContextRef ctx, size_t argc, const JSValueRef argv[]);
 
+    void setDrawDelegate(JSContextRef ctxp, size_t argc, const JSValueRef argv[]);
     JSClassRef getJSClassForClass(EJBindingBase* classId);
     void hideLoadingScreen(void);
     void loadJavaScriptFile(const char *filename);

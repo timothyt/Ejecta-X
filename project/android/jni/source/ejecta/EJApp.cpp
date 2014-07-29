@@ -63,7 +63,7 @@ JSObjectRef ej_callAsConstructor(JSContextRef ctx, JSObjectRef constructor, size
 EJApp* EJApp::ejectaInstance = NULL;
 
 
-EJApp::EJApp() : currentRenderingContext(0), screenRenderingContext(0), touchDelegate(0), touches(0), openGLContext(NULL)
+EJApp::EJApp() : currentRenderingContext(0), screenRenderingContext(0), touchDelegate(0), touches(0), openGLContext(NULL), drawDelegate(NULL)
 {
 	NSPoolManager::sharedPoolManager()->push();
 
@@ -220,6 +220,10 @@ void EJApp::run(void)
 	}
 
 	if(screenRenderingContext) {
+		if(drawDelegate != NULL)
+		{
+			invokeCallback(drawDelegate, NULL, 0, NULL);
+		}
 		screenRenderingContext->present();
 		NSPoolManager::sharedPoolManager()->pop();
 	}
@@ -577,3 +581,16 @@ void EJApp::finalize()
 		ejectaInstance = NULL;
 	}
 }
+
+// Add a javascript function that will be called when Renderer::onDrawFrame is called and prior to the rendering context present being called
+void EJApp::setDrawDelegate(JSContextRef ctxp, size_t argc, const JSValueRef argv[])
+{
+	if( argc != 1 || !JSValueIsObject(ctxp, argv[0]) ) {
+		return;
+	}
+
+	drawDelegate = JSValueToObject(ctxp, argv[0], NULL);
+
+	return;
+}
+

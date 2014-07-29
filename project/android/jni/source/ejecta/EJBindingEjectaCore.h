@@ -46,6 +46,7 @@ public:
 	EJ_BIND_GET_DEFINE(userAgent, ctx);
 	EJ_BIND_GET_DEFINE(appVersion, ctx);
 	EJ_BIND_GET_DEFINE(onLine, ctx);
+	EJ_BIND_FUNCTION_DEFINE(setDrawDelegate, ctx, argc, argv);
 };
 
 #endif // __EJ_BINDING_EJECTA_CORE_H__
