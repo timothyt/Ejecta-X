@@ -41,9 +41,7 @@ public:
 	EJCanvasContextScreen(short widthp, short heightp);
 	~EJCanvasContextScreen();
 
-	virtual void create();
 	virtual void resizeToWidth(short newWidth, short newHeight);
-	virtual void prepare();
 	virtual void present();
 	void finish();
 	virtual EJImageData* getImageData(float sx, float sy, float sw, float sh);

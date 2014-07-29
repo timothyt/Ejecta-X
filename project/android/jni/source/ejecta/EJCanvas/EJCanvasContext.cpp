@@ -70,7 +70,8 @@ EJCanvasContext::EJCanvasContext(short widthp, short heightp) :
 	state->font = new UIFont(NSStringMake("simsun.ttc"),32);
 	state->clipPath = NULL;
 	
-	setScreenSize(widthp, heightp);
+	bufferWidth = width = widthp;
+	bufferHeight = height = heightp;
 	
 	path = new EJPath();
 	backingStoreRatio = 1;
@@ -165,7 +166,13 @@ void EJCanvasContext::create()
 	}
 
 #endif
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_DITHER);
 
+	glEnable(GL_BLEND);
+	glDepthFunc(GL_ALWAYS);
+
+	resizeToWidth(width, height);
 }
 
 void EJCanvasContext::resizeToWidth(short newWidth, short newHeight) {
@@ -173,18 +180,38 @@ void EJCanvasContext::resizeToWidth(short newWidth, short newHeight) {
 	width = newWidth;
 	height = newHeight;
 	
-	// backingStoreRatio = (useRetinaResolution && [UIScreen mainScreen].scale == 2) ? 2 : 1;
 	backingStoreRatio = 1;
 	bufferWidth = width * backingStoreRatio;
 	bufferHeight = height * backingStoreRatio;
 	
-	// resetFramebuffer();
+	resetFramebuffer();
 }
 
-void EJCanvasContext::setScreenSize(int widthp, int heightp)
+void EJCanvasContext::resetFramebuffer()
 {
-	bufferWidth = width = widthp;
-	bufferHeight = height = heightp;
+	// Delete stencil buffer if present; it will be re-created when needed
+	if( stencilBuffer ) {
+		glDeleteRenderbuffers(1, &stencilBuffer);
+		stencilBuffer = 0;
+	}
+
+	// Resize the MSAA buffer
+	if( msaaEnabled && msaaFrameBuffer && msaaRenderBuffer ) {
+		glBindFramebuffer(GL_FRAMEBUFFER, msaaFrameBuffer);
+		glBindRenderbuffer(GL_RENDERBUFFER, msaaRenderBuffer);
+
+		// TODO Need to determine equivalent of this renderbuffer on Android EGL devices
+		// glRenderbufferStorageMultisample(GL_RENDERBUFFER, msaaSamples, GL_RGBA8_OES, bufferWidth, bufferHeight);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msaaRenderBuffer);
+	}
+
+	prepare();
+
+	// Clear to transparent
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	needsPresenting = true;
 }
 
 void EJCanvasContext::createStencilBufferOnce()
@@ -210,6 +237,7 @@ void EJCanvasContext::createStencilBufferOnce()
 	glGenRenderbuffers(1, &stencilBuffer);
 	glBindRenderbuffer(GL_RENDERBUFFER, stencilBuffer);
 	if( msaaEnabled ) {
+		// TODO Need to determine equivalent of this renderbuffer on Android EGL devices
 		//glRenderbufferStorageMultisampleAPPLE(GL_RENDERBUFFER, msaaSamples, GL_DEPTH24_STENCIL8_OES, bufferWidth, bufferHeight);
 	}
 	else {
@@ -223,6 +251,7 @@ void EJCanvasContext::createStencilBufferOnce()
 #endif
 
 	glClear(GL_STENCIL_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glEnable(GL_DEPTH_TEST);
 }
 
 void EJCanvasContext::bindVertexBuffer()
@@ -247,7 +276,7 @@ void EJCanvasContext::prepare()
 	glBindFramebuffer(GL_FRAMEBUFFER, msaaEnabled ? msaaFrameBuffer : viewFrameBuffer );
 	glBindRenderbuffer(GL_RENDERBUFFER, msaaEnabled ? msaaRenderBuffer : viewRenderBuffer );
 #endif	
-	glViewport(0, 0, width, height);
+	glViewport(0, 0, bufferWidth, bufferHeight);
 	
 	
 	EJCompositeOperation op = state->globalCompositeOperation;
@@ -257,13 +286,22 @@ void EJCanvasContext::prepare()
 	EJTexture::setSmoothScaling(imageSmoothingEnabled);
 	
 	bindVertexBuffer();
-		
+
+	if( stencilBuffer ) {
+		glEnable(GL_DEPTH_TEST);
+	}
+	else {
+		glDisable(GL_DEPTH_TEST);
+	}
+
 	if( state->clipPath ) {
 		glDepthFunc(GL_EQUAL);
 	}
 	else {
 		glDepthFunc(GL_ALWAYS);
 	}
+
+	needsPresenting = true;
 }
 
 void EJCanvasContext::setWidth(short newWidth) {
@@ -524,6 +562,7 @@ void EJCanvasContext::flushBuffers()
 	if( vertexBufferIndex == 0 ) { return; }
 
 	glDrawArrays(GL_TRIANGLES, 0, vertexBufferIndex);
+	needsPresenting = true;
 	vertexBufferIndex = 0;
 }
 
