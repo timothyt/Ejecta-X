@@ -189,18 +189,27 @@ void EJApp::setScreenSize(int w, int h)
 
 void EJApp::run(void)
 {
-
 	if( paused ) { return; }
-
-	EJHttpClient::getInstance()->dispatchResponseCallbacks(0);
 
 	if (screenRenderingContext)
 	{
-	// Redraw the canvas
+		// Redraw the canvas
 		//currentRenderingContext = (EJCanvasContext *)screenRenderingContext;
 		setCurrentRenderingContext((EJCanvasContext *)screenRenderingContext);
-
 	}
+
+	if(screenRenderingContext) {
+		screenRenderingContext->present();
+
+		if(drawDelegate != NULL)
+		{
+			invokeCallback(drawDelegate, NULL, 0, NULL);
+		}
+
+		NSPoolManager::sharedPoolManager()->pop();
+	}
+
+	EJHttpClient::getInstance()->dispatchResponseCallbacks(0);
 
 	if (!lockTouches)
 	{
@@ -217,15 +226,6 @@ void EJApp::run(void)
 
 	// Check all timers
 	timers->update();
-	
-	if(screenRenderingContext) {
-		if(drawDelegate != NULL)
-		{
-			invokeCallback(drawDelegate, NULL, 0, NULL);
-		}
-		screenRenderingContext->present();
-		NSPoolManager::sharedPoolManager()->pop();
-	}
 }
 
 void EJApp::pause(void)
