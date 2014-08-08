@@ -11,6 +11,7 @@
 #include <GL/gl.h>
 #else
 #include <GLES2/gl2.h>
+#include <EGL/egl.h>
 #endif
 
 #include "EJCocoa/support/nsMacros.h"
@@ -23,6 +24,7 @@
 #include "EJCocoa/NSCache.h"
 #include "EJCocoa/UIFont.h"
 #include "EJSharedOpenGLContext.h"
+
 
 
 #define EJ_CANVAS_STATE_STACK_SIZE 16
@@ -134,10 +136,9 @@ protected:
 	GLuint stencilBuffer;
 	
 	short width, height;
+	bool needsPresenting;
 	short bufferWidth, bufferHeight;
 	
-	bool needsPresenting;
-
 	EJTexture * currentTexture;
 	
 	EJPath * path;
@@ -153,28 +154,41 @@ protected:
 
 	EJGLProgram2D *currentProgram;
 	EJSharedOpenGLContext *sharedGLContext;
+
 	EJFillable* fillObject;
 
+	GLuint standardVAO;
+	EJVertex vertexData[4];	// vertex data for quad
+	GLushort indexData[6];  // index data for drawing triangles of a quad (enough room for non-tri-stripped)
+	GLuint rectVertexBufferId;
+	GLuint rectIndexBufferId;
+
 	void setProgram(EJGLProgram2D *program);
+	void createBuffers();
 
 public:
 	NSCache * fontCache;
 
 	EJCanvasState * state;
+
 	UIFont * font;
 	float backingStoreRatio;
 	bool msaaEnabled;
 	int msaaSamples;
 	bool imageSmoothingEnabled;
+	static PFNGLGENVERTEXARRAYSOESPROC glGenVertexArrays;
+	static PFNGLBINDVERTEXARRAYOESPROC glBindVertexArray;
+	static PFNGLDELETEVERTEXARRAYSOESPROC glDeleteVertexArrays;
+	static PFNGLISVERTEXARRAYOESPROC glIsVertexArray;
 
 	EJCanvasContext();
 	EJCanvasContext(short widthp, short heightp);
 	~EJCanvasContext();
 	virtual void create();
 	virtual void resizeToWidth(short newWidth, short newHeight);
-	void resetFramebuffer();
 	void createStencilBufferOnce();
 	void bindVertexBuffer();
+	void createStandardVAO();
 	virtual void prepare();
 	void setTexture(EJTexture * newTexture);
 	void pushTri(float x1, float y1, float x2, float y2, float x3, float y3, EJColorRGBA color, CGAffineTransform transform);
@@ -184,6 +198,7 @@ public:
 	void pushTexturedRect(float x, float y, float w, float h, float tx, float ty, float tw, float th, EJColorRGBA color, CGAffineTransform transform);
 	void pushPatternedRect(float x, float y, float w, float h, EJCanvasPattern* pattern, EJColorRGBA color, CGAffineTransform transform);
 	void flushBuffers();
+	void DrawTriangles();
 	
 	void save();
 	void restore();
@@ -216,6 +231,7 @@ public:
 
 	void clip();
 	void resetClip();
+	void resetFramebuffer();
 
 	//返回类名
 	virtual const char* getClassName();

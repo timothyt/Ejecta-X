@@ -7,12 +7,17 @@
 #else
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+#include <EGL/egl.h>
 #endif
 #include <typeinfo>
 #include "../EJApp.h"
 #include "EJCanvasContext.h"
 #include "EJCanvasPattern.h"
 
+PFNGLGENVERTEXARRAYSOESPROC EJCanvasContext::glGenVertexArrays;
+PFNGLBINDVERTEXARRAYOESPROC EJCanvasContext::glBindVertexArray;
+PFNGLDELETEVERTEXARRAYSOESPROC EJCanvasContext::glDeleteVertexArrays;
+PFNGLISVERTEXARRAYOESPROC EJCanvasContext::glIsVertexArray;
 
 EJCanvasContext::EJCanvasContext() :
 	viewFrameBuffer(0),
@@ -45,7 +50,10 @@ EJCanvasContext::EJCanvasContext(short widthp, short heightp) :
 	upsideDown(false),
 	currentProgram(NULL)
 {
+	width = widthp;
+	height = heightp;
 	sharedGLContext = EJApp::instance()->getOpenGLContext();
+
 	if(sharedGLContext != NULL) {
 		vertexBuffer = sharedGLContext->getVertexBuffer();
 		vertexBufferSize = EJ_OPENGL_VERTEX_BUFFER_SIZE;
@@ -72,14 +80,14 @@ EJCanvasContext::EJCanvasContext(short widthp, short heightp) :
 	
 	bufferWidth = width = widthp;
 	bufferHeight = height = heightp;
-	
+
 	path = new EJPath();
 	backingStoreRatio = 1;
 	
 	fontCache = new NSCache();
 	fontCache->setCountLimit(8);
 	
-	imageSmoothingEnabled = true;
+	imageSmoothingEnabled = false;
 	msaaEnabled = false;
 	msaaSamples = 2;
 	fillObject = NULL;
@@ -161,11 +169,9 @@ void EJCanvasContext::create()
 		viewRenderBuffer = (GLuint) 0;
 		
 		glBindFramebuffer(GL_FRAMEBUFFER, viewFrameBuffer);
-
 		glBindRenderbuffer(GL_RENDERBUFFER, viewRenderBuffer);
 	}
 
-#endif
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_DITHER);
 
@@ -173,6 +179,9 @@ void EJCanvasContext::create()
 	glDepthFunc(GL_ALWAYS);
 
 	resizeToWidth(width, height);
+
+#endif
+
 }
 
 void EJCanvasContext::resizeToWidth(short newWidth, short newHeight) {
@@ -180,11 +189,31 @@ void EJCanvasContext::resizeToWidth(short newWidth, short newHeight) {
 	width = newWidth;
 	height = newHeight;
 	
+	// backingStoreRatio = (useRetinaResolution && [UIScreen mainScreen].scale == 2) ? 2 : 1;
 	backingStoreRatio = 1;
 	bufferWidth = width * backingStoreRatio;
 	bufferHeight = height * backingStoreRatio;
 	
 	resetFramebuffer();
+}
+
+void EJCanvasContext::createBuffers()
+{
+    glGenBuffers(1, &rectVertexBufferId);
+    glBindBuffer(GL_ARRAY_BUFFER, rectVertexBufferId);
+    memset(&vertexData[0], 0, sizeof(EJVertex)*4);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(EJVertex)*4, &vertexData[0], GL_DYNAMIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    //glGenBuffers(1, &rectIndexBufferId);
+    //glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, rectIndexBufferId);
+    indexData[0] = 0;
+    indexData[1] = 2;
+    indexData[2] = 1;
+    indexData[3] = 1;
+    indexData[4] = 2;
+    indexData[5] = 3;
+    //glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLushort)*4, indexData, GL_STATIC_DRAW);
 }
 
 void EJCanvasContext::resetFramebuffer()
@@ -200,8 +229,7 @@ void EJCanvasContext::resetFramebuffer()
 		glBindFramebuffer(GL_FRAMEBUFFER, msaaFrameBuffer);
 		glBindRenderbuffer(GL_RENDERBUFFER, msaaRenderBuffer);
 
-		// TODO Need to determine equivalent of this renderbuffer on Android EGL devices
-		// glRenderbufferStorageMultisample(GL_RENDERBUFFER, msaaSamples, GL_RGBA8_OES, bufferWidth, bufferHeight);
+		// TODO ttt glRenderbufferStorageMultisample(GL_RENDERBUFFER, msaaSamples, GL_RGBA8_OES, bufferWidth, bufferHeight);
 		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msaaRenderBuffer);
 	}
 
@@ -237,7 +265,6 @@ void EJCanvasContext::createStencilBufferOnce()
 	glGenRenderbuffers(1, &stencilBuffer);
 	glBindRenderbuffer(GL_RENDERBUFFER, stencilBuffer);
 	if( msaaEnabled ) {
-		// TODO Need to determine equivalent of this renderbuffer on Android EGL devices
 		//glRenderbufferStorageMultisampleAPPLE(GL_RENDERBUFFER, msaaSamples, GL_DEPTH24_STENCIL8_OES, bufferWidth, bufferHeight);
 	}
 	else {
@@ -254,6 +281,33 @@ void EJCanvasContext::createStencilBufferOnce()
 	glEnable(GL_DEPTH_TEST);
 }
 
+void EJCanvasContext::createStandardVAO()
+{
+	if(!glGenVertexArraysOES)
+	{
+		glGenVertexArrays = (PFNGLGENVERTEXARRAYSOESPROC)eglGetProcAddress ( "glGenVertexArraysOES" );
+		glBindVertexArray = (PFNGLBINDVERTEXARRAYOESPROC)eglGetProcAddress ( "glBindVertexArrayOES" );
+		glDeleteVertexArrays = (PFNGLDELETEVERTEXARRAYSOESPROC)eglGetProcAddress ( "glDeleteVertexArraysOES" );
+		glIsVertexArray = (PFNGLISVERTEXARRAYOESPROC)eglGetProcAddress ( "glIsVertexArrayOES" );
+	}
+
+	NSLog("glGenVertexArraysOES %x glBindVertexArrayOES %x glDeleteVertexArraysOES %x glIsVertexArrayOES %x", glGenVertexArrays, glBindVertexArray, glDeleteVertexArrays, glIsVertexArray);
+
+	glGenVertexArrays(1, &standardVAO);
+	glBindVertexArray(standardVAO);
+	glEnableVertexAttribArray(kEJGLProgram2DAttributePos);
+	glVertexAttribPointer(kEJGLProgram2DAttributePos, 2, GL_FLOAT, GL_FALSE, sizeof(EJVertex), (char *)vertexBuffer + offsetof(EJVertex, pos));
+
+	glEnableVertexAttribArray(kEJGLProgram2DAttributeUV);
+	glVertexAttribPointer(kEJGLProgram2DAttributeUV, 2, GL_FLOAT, GL_FALSE, sizeof(EJVertex), (char *)vertexBuffer + offsetof(EJVertex, uv));
+
+	glEnableVertexAttribArray(kEJGLProgram2DAttributeColor);
+	glVertexAttribPointer(kEJGLProgram2DAttributeColor, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(EJVertex), (char *)vertexBuffer + offsetof(EJVertex, color));
+
+	glBindBuffer(GL_ARRAY_BUFFER,0);
+	glBindVertexArray(0);
+}
+
 void EJCanvasContext::bindVertexBuffer()
 {
 	glEnableVertexAttribArray(kEJGLProgram2DAttributePos);
@@ -264,6 +318,19 @@ void EJCanvasContext::bindVertexBuffer()
 
 	glEnableVertexAttribArray(kEJGLProgram2DAttributeColor);
 	glVertexAttribPointer(kEJGLProgram2DAttributeColor, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(EJVertex), (char *)vertexBuffer + offsetof(EJVertex, color));
+
+	/*
+	glBindBuffer(GL_ARRAY_BUFFER, rectVertexBufferId);
+	glVertexAttribPointer(kEJGLProgram2DAttributePos, 2, GL_FLOAT, GL_FALSE, sizeof(EJVertex), (void*)offsetof(EJVertex, pos));
+	glEnableVertexAttribArray(kEJGLProgram2DAttributePos);
+
+	glEnableVertexAttribArray(kEJGLProgram2DAttributeUV);
+	glVertexAttribPointer(kEJGLProgram2DAttributeUV, 2, GL_FLOAT, GL_FALSE, sizeof(EJVertex), (void*)offsetof(EJVertex, uv));
+
+	glEnableVertexAttribArray(kEJGLProgram2DAttributeColor);
+	glVertexAttribPointer(kEJGLProgram2DAttributeColor, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(EJVertex), (void*)offsetof(EJVertex, color));
+	*/
+	//glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
 }
 
 void EJCanvasContext::prepare()
@@ -278,15 +345,12 @@ void EJCanvasContext::prepare()
 #endif	
 	glViewport(0, 0, bufferWidth, bufferHeight);
 	
-	
 	EJCompositeOperation op = state->globalCompositeOperation;
 	glBlendFunc( EJCompositeOperationFuncs[op].source, EJCompositeOperationFuncs[op].destination );
 	currentTexture = NULL;
 	currentProgram = NULL;
 	EJTexture::setSmoothScaling(imageSmoothingEnabled);
 	
-	bindVertexBuffer();
-
 	if( stencilBuffer ) {
 		glEnable(GL_DEPTH_TEST);
 	}
@@ -301,11 +365,20 @@ void EJCanvasContext::prepare()
 		glDepthFunc(GL_ALWAYS);
 	}
 
+	bindVertexBuffer();
+    indexData[0] = 0;
+    indexData[1] = 2;
+    indexData[2] = 1;
+    indexData[3] = 1;
+    indexData[4] = 2;
+    indexData[5] = 3;
 	needsPresenting = true;
 }
 
+
 void EJCanvasContext::setWidth(short newWidth) {
 	if( newWidth == width ) {
+
 		// Same width as before? Just clear the canvas, as per the spec
 		flushBuffers();
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -344,23 +417,21 @@ void EJCanvasContext::setTexture(EJTexture * newTexture) {
 void EJCanvasContext::setProgram(EJGLProgram2D *newProgram) {
     if( currentProgram == newProgram ) { return; }
     
+
     flushBuffers();
     currentProgram = newProgram;
+    
 	if(currentProgram == NULL)
 	{
 		return;
 	}
-
+	    
     glUseProgram(currentProgram->getProgram());
     glUniform2f(currentProgram->getScreen(), width, height * (upsideDown ? -1 : 1));
 }
 
 void EJCanvasContext::pushTri(float x1, float y1, float x2, float y2, float x3, float y3, EJColorRGBA color, CGAffineTransform transform)
 {
-	if( vertexBufferIndex >= vertexBufferSize - 3 ) {
-		flushBuffers();
-	}
-	
 	EJVector2 d1 = { x1, y1 };
 	EJVector2 d2 = { x2, y2 };
 	EJVector2 d3 = { x3, y3 };
@@ -382,14 +453,13 @@ void EJCanvasContext::pushTri(float x1, float y1, float x2, float y2, float x3, 
 	vb[2] = vb_2;
 	
 	vertexBufferIndex += 3;
+
+	DrawTriangles();
 }
 
 void EJCanvasContext::pushQuad(EJVector2 v1, EJVector2 v2, EJVector2 v3, EJVector2 v4, EJVector2 t1, EJVector2 t2, EJVector2 t3, EJVector2 t4, EJColorRGBA color, CGAffineTransform transform)
 {
-	if( vertexBufferIndex >= vertexBufferSize - 6 ) {
-		flushBuffers();
-	}
-	
+	// TODO disable quad for now ttt
 	if( !CGAffineTransformIsIdentity(transform) ) {
 		v1 = EJVector2ApplyTransform( v1, transform );
 		v2 = EJVector2ApplyTransform( v2, transform );
@@ -406,6 +476,7 @@ void EJCanvasContext::pushQuad(EJVector2 v1, EJVector2 v2, EJVector2 v3, EJVecto
 	EJVertex vb_4 = { v3, t3, color };
 	EJVertex vb_5 = { v4, t4, color };
 
+	/*
 	vb[0] = vb_0;
 	vb[1] = vb_1;
 	vb[2] = vb_2;
@@ -414,19 +485,22 @@ void EJCanvasContext::pushQuad(EJVector2 v1, EJVector2 v2, EJVector2 v3, EJVecto
 	vb[5] = vb_5;
 	
 	vertexBufferIndex += 6;
+	*/
+	vb[0] = vb_0;
+	vb[1] = vb_2;
+	vb[2] = vb_1;
+	vb[3] = vb_5;
+	vertexBufferIndex += 4;
+
+	DrawTriangles();
 }
 
 void EJCanvasContext::pushRect(float x, float y, float w, float h, float tx, float ty, float tw, float th, EJColorRGBA color, CGAffineTransform transform)
 {
-
-	if( vertexBufferIndex >= vertexBufferSize - 6 ) {
-		flushBuffers();
-	}
-	
-	EJVector2 d11 = { x, y };
-	EJVector2 d21 = { x+w, y };
-	EJVector2 d12 = { x, y+h };
-	EJVector2 d22 = { x+w, y+h };
+	EJVector2 d11 = { x, y };   // v0
+	EJVector2 d21 = { x+w, y }; // v1
+	EJVector2 d12 = { x, y+h }; // v2
+	EJVector2 d22 = { x+w, y+h }; // v3
 	
 	if( !CGAffineTransformIsIdentity(transform) ) {
 		d11 = EJVector2ApplyTransform( d11, transform );
@@ -445,6 +519,7 @@ void EJCanvasContext::pushRect(float x, float y, float w, float h, float tx, flo
 	EJVertex vb_4 = { d12, {0, 0}, color };	// bottom left
 	EJVertex vb_5 = { d22, {0, 0}, color };// bottom right
 
+	/*
 	vb[0] = vb_0;	// top left
 	vb[1] = vb_1;	// top right
 	vb[2] = vb_2;	// bottom left
@@ -454,46 +529,15 @@ void EJCanvasContext::pushRect(float x, float y, float w, float h, float tx, flo
 	vb[5] = vb_5;// bottom right
 	
 	vertexBufferIndex += 6;
-}
+	*/
+	vb[0] = vb_2;	// top left
+	vb[1] = vb_0;   // bottom left
+	vb[2] = vb_5;   // top right
+	vb[3] = vb_1;   // bottom right
 
-void EJCanvasContext::pushTexturedRect(float x, float y, float w, float h, float tx, float ty, float tw, float th, EJColorRGBA color, CGAffineTransform transform)
-{
+	vertexBufferIndex += 4;
 
-	if( vertexBufferIndex >= vertexBufferSize - 6 ) {
-		flushBuffers();
-	}
-	
-	EJVector2 d11 = { x, y };
-	EJVector2 d21 = { x+w, y };
-	EJVector2 d12 = { x, y+h };
-	EJVector2 d22 = { x+w, y+h };
-	
-	if( !CGAffineTransformIsIdentity(transform) ) {
-		d11 = EJVector2ApplyTransform( d11, transform );
-		d21 = EJVector2ApplyTransform( d21, transform );
-		d12 = EJVector2ApplyTransform( d12, transform );
-		d22 = EJVector2ApplyTransform( d22, transform );
-	}
-	
-	EJVertex * vb = &vertexBuffer[vertexBufferIndex];
-
-	EJVertex vb_0 = { d11, {tx, ty}, color };	// top left
-	EJVertex vb_1 = { d21, {tx+tw, ty}, color };	// top right
-	EJVertex vb_2 = { d12, {tx, ty+th}, color };	// bottom left
-
-	EJVertex vb_3 = { d21, {tx+tw, ty}, color };	// top right
-	EJVertex vb_4 = { d12, {tx, ty+th}, color };	// bottom left
-	EJVertex vb_5 = { d22, {tx+tw, ty+th}, color };// bottom right
-
-	vb[0] = vb_0;	// top left
-	vb[1] = vb_1;	// top right
-	vb[2] = vb_2;	// bottom left
-		
-	vb[3] = vb_3;	// top right
-	vb[4] = vb_4;	// bottom left
-	vb[5] = vb_5;// bottom right
-	
-	vertexBufferIndex += 6;
+	DrawTriangles();
 }
 
 void EJCanvasContext::pushFilledRect(float x, float y, float w, float h, EJFillable* fillable, EJColorRGBA color, CGAffineTransform transform)
@@ -557,11 +601,75 @@ void EJCanvasContext::pushPatternedRect(float x, float y, float w, float h, EJCa
 	}
 }
 
+void EJCanvasContext::pushTexturedRect(float x, float y, float w, float h, float tx, float ty, float tw, float th, EJColorRGBA color, CGAffineTransform transform)
+{
+	EJVector2 d11 = { x, y };     // bottom left
+	EJVector2 d21 = { x+w, y };   // bottom right
+	EJVector2 d12 = { x, y+h };   // top left
+	EJVector2 d22 = { x+w, y+h };  // top right
+	
+	if( !CGAffineTransformIsIdentity(transform) ) {
+		d11 = EJVector2ApplyTransform( d11, transform );
+		d21 = EJVector2ApplyTransform( d21, transform );
+		d12 = EJVector2ApplyTransform( d12, transform );
+		d22 = EJVector2ApplyTransform( d22, transform );
+	}
+	
+	EJVertex * vb = &vertexBuffer[vertexBufferIndex];
+
+	EJVertex vb_0 = { d11, {tx, ty}, color };	// top left             bottom left
+	EJVertex vb_1 = { d21, {tx+tw, ty}, color };	// top right        bottom right
+	EJVertex vb_2 = { d12, {tx, ty+th}, color };	// bottom left      top left
+
+	EJVertex vb_3 = { d21, {tx+tw, ty}, color };	// top right        bottom right
+	EJVertex vb_4 = { d12, {tx, ty+th}, color };	// bottom left      top left
+	EJVertex vb_5 = { d22, {tx+tw, ty+th}, color };// bottom right      top right
+
+	/*
+	vb[0] = vb_0;	// top left
+	vb[1] = vb_1;	// top right
+	vb[2] = vb_2;	// bottom left
+		
+	vb[3] = vb_3;	// top right
+	vb[4] = vb_4;	// bottom left
+	vb[5] = vb_5;// bottom right
+	
+	vertexBufferIndex += 6;
+	*/
+
+	vb[0] = vb_2;	// top left
+	vb[1] = vb_0;   // bottom left
+	vb[2] = vb_5;   // top right
+	vb[3] = vb_1;   // bottom right
+
+	vertexBufferIndex += 4;
+	DrawTriangles();
+}
+
 void EJCanvasContext::flushBuffers()
 {
+	return;
+
 	if( vertexBufferIndex == 0 ) { return; }
 
 	glDrawArrays(GL_TRIANGLES, 0, vertexBufferIndex);
+	needsPresenting = true;
+	vertexBufferIndex = 0;
+}
+
+void EJCanvasContext::DrawTriangles()
+{
+	if( vertexBufferIndex == 0 ) { return; }
+
+	// copy new data to vertex buffer
+	//glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertexData)*4, vertexData);
+	//glBufferData(GL_ARRAY_BUFFER, sizeof(vertexData), vertexData, GL_DYNAMIC_DRAW);
+	//glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
+	//glDrawArrays(GL_TRIANGLE_STRIP, 0, vertexBufferIndex);
+
+	// Drawing individual triangles seems to be more performant for small groups of triangles than tristrips. Future work to bundle tris should be investigated
+	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, indexData);
+
 	needsPresenting = true;
 	vertexBufferIndex = 0;
 }
@@ -591,7 +699,7 @@ EJCompositeOperation EJCanvasContext::getGlobalCompositeOperation() const {
 void EJCanvasContext::save()
 {
 	if( stateIndex == EJ_CANVAS_STATE_STACK_SIZE-1 ) {
-		NSLOG("Warning: EJ_CANVAS_STATE_STACK_SIZE (%d) reached", EJ_CANVAS_STATE_STACK_SIZE);
+		//NSLOG("Warning: EJ_CANVAS_STATE_STACK_SIZE (%d) reached", EJ_CANVAS_STATE_STACK_SIZE);
 		return;
 	}
 	
@@ -676,9 +784,14 @@ void EJCanvasContext::drawImage(EJTexture * texture, float sx, float sy, float s
 		float tw = texture->realWidth;
 		float th = texture->realHeight;
 
+		//NSLog("drawImage sx %f sy %f sw %f sh %f dx %f dy %f dw %f dh %f", sx, sy, sw, sh, dx, dy, dw, dh);
 		setProgram(sharedGLContext->getGlProgram2DTexture());
 		setTexture(texture);
 		pushTexturedRect(dx, dy, dw, dh, sx/tw, sy/th, sw/tw, sh/th, EJCanvasBlendWhiteColor(state), state->transform);
+	}
+	else
+	{
+		NSLog("!!!!EJCanvasContext::drawImage Drawing without texture!!!!");
 	}
 }
 
@@ -694,7 +807,6 @@ void EJCanvasContext::fillRect(float x, float y, float w, float h)
 		EJColorRGBA cc = EJCanvasBlendFillColor(state);
 		pushRect(x, y, w, h, 0, 0, 0, 0, cc, state->transform);
 	}
-
 }
 
 void EJCanvasContext::strokeRect(float x, float y, float w, float h)
@@ -856,12 +968,19 @@ float EJCanvasContext::measureText(NSString * text)
 void EJCanvasContext::clip()
 {
 	flushBuffers();
-	
+
 	if(state == NULL)
 	{
 		return;
 	}
-
+	else
+	{
+		if(state->clipPath == NULL)
+		{
+			//NSLOG("EJCanvasContext state->clipPath was null");
+		}
+	}
+	
 	if(state->clipPath)
 	{
 		state->clipPath->release();
@@ -882,8 +1001,8 @@ void EJCanvasContext::resetClip()
 		flushBuffers();
 		state->clipPath->release();
 		state->clipPath = NULL;
-		
 		glDisable(GL_STENCIL_TEST);
+
 	}
 }
 
