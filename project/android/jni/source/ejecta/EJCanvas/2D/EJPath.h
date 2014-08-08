@@ -71,6 +71,7 @@ public:
 
 	void drawPolygonsToContext(EJCanvasContext * context,
 			EJPathPolygonTarget target);
+	void drawPolygonsToStencil(EJCanvasContext * context);
 	void drawLinesToContext(EJCanvasContext * context);
 
 };

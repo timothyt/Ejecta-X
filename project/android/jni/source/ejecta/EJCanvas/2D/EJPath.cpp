@@ -285,13 +285,63 @@ void EJPath::arc(float x, float y, float radius, float startAngle, float endAngl
 	}
 }
 
+void EJPath::drawPolygonsToStencil(EJCanvasContext * context)
+{
+	endSubPath();
+	if( longestSubpath < 3 ) { return; }
+
+	EJCanvasState * state = context->state;
+	EJColorRGBA color = EJCanvasBlendFillColor(state);
+
+
+	// For potentially concave polygons (those with more than 3 unique vertices), we
+	// need to draw to the context twice: first to create a stencil mask, and then again
+	// to fill the created mask with the polygons color.
+	// TODO: add a fast path for polygons that only have 3 vertices
+
+	context->flushBuffers();
+	context->createStencilBufferOnce();
+
+
+	// Disable drawing to the color buffer, enable the stencil buffer
+	//glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	//glDisableClientState(GL_COLOR_ARRAY);
+	glDisableVertexAttribArray(kEJGLProgram2DAttributeColor);
+	glDisableVertexAttribArray(kEJGLProgram2DAttributeUV);
+
+	glDisable(GL_BLEND);
+	glDisable(GL_TEXTURE_2D);
+	glDisable(GL_DEPTH_TEST);
+	glEnable(GL_STENCIL_TEST);
+	glStencilMask(0xff);
+	glClearStencil(0x0);
+	glClear(GL_STENCIL_BUFFER_BIT);
+	glStencilFunc(GL_ALWAYS, 0x1, 0xff);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_FRONT);
+	for( path_t::iterator sp = paths.begin(); sp != paths.end(); ++sp ) {
+		subpath_t &path = sp==paths.end()?currentPath:*sp;
+
+		glVertexAttribPointer(kEJGLProgram2DAttributePos, 2, GL_FLOAT, GL_FALSE, 0, &(path.points).front());
+		glDrawArrays(GL_TRIANGLE_FAN, 0, path.points.size());
+
+		if(sp==paths.end()) break;
+	}
+	glDisable(GL_CULL_FACE);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	context->bindVertexBuffer();
+}
+
 void EJPath::drawPolygonsToContext(EJCanvasContext * context,
 		EJPathPolygonTarget target) {
-	//[self endSubPath];
-	if( longestSubpath < 3 && currentPath.points.size()<3) { return; }
+	endSubPath();
+	if( longestSubpath < 3 ) { return; }
 	
-	EJCanvasState *state = context->state;
-	EJColorRGBA white = {0xffffffff};
+	EJCanvasState * state = context->state;
+	EJColorRGBA color = EJCanvasBlendFillColor(state);
+	
 	
 	// For potentially concave polygons (those with more than 3 unique vertices), we
 	// need to draw to the context twice: first to create a stencil mask, and then again
@@ -303,10 +353,13 @@ void EJPath::drawPolygonsToContext(EJCanvasContext * context,
 	
 	
 	// Disable drawing to the color buffer, enable the stencil buffer
-	glDisableVertexAttribArray(kEJGLProgram2DAttributeUV);
+	//glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	//glDisableClientState(GL_COLOR_ARRAY);
 	glDisableVertexAttribArray(kEJGLProgram2DAttributeColor);
-
+	glDisableVertexAttribArray(kEJGLProgram2DAttributeUV);
+	
 	glDisable(GL_BLEND);
+	glDisable(GL_TEXTURE_2D);
 	glEnable(GL_STENCIL_TEST);
 	glStencilMask(0xff);
 	
@@ -317,17 +370,18 @@ void EJPath::drawPolygonsToContext(EJCanvasContext * context,
 	// Clear the needed area in the stencil buffer
 	
 	glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO);
-	context->
-	 	pushRect(minPos.x, minPos.y, maxPos.x-minPos.x, maxPos.y-minPos.y,
-	 	0, 0, 0, 0, white, CGAffineTransformIdentity);
+	 context->
+	 	pushRect(minPos.x,minPos.y,maxPos.x-minPos.x ,maxPos.y-minPos.y
+	 	,0 ,0 ,0 ,0 ,color	,CGAffineTransformIdentity);
 	context->flushBuffers();
+	
 	
 	// For each subpath, draw to the stencil buffer twice:
 	// 1) for all back-facing polygons, increase the stencil value
 	// 2) for all front-facing polygons, decrease the stencil value
 	
 	glEnable(GL_CULL_FACE);
-	for( path_t::iterator sp = paths.begin(); ; ++sp ) {
+	for( path_t::iterator sp = paths.begin(); sp != paths.end(); ++sp ) {
 		subpath_t &path = sp==paths.end()?currentPath:*sp;
 		
 		glVertexAttribPointer(kEJGLProgram2DAttributePos, 2, GL_FLOAT, GL_FALSE, 0, &(path.points).front());
@@ -370,32 +424,12 @@ void EJPath::drawPolygonsToContext(EJCanvasContext * context,
 	}
 	
 	glStencilFunc(GL_NOTEQUAL, 0x00, 0xff);
-	glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO);
+    glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO);
 
-	if( state->fillObject && target == kEJPathPolygonTargetColor ) {
-		// If we have a fill pattern or gradient, we have to do some extra work to unproject the
-		// Quad we're drawing, so we can then project it _with_ the pattern/gradient again
-
-		CGAffineTransform inverse = CGAffineTransformInvert(transform);
-		EJVector2 p1 = EJVector2ApplyTransform(minPos, inverse);
-		EJVector2 p2 = EJVector2ApplyTransform(EJVector2Make(maxPos.x, minPos.y), inverse);
-		EJVector2 p3 = EJVector2ApplyTransform(EJVector2Make(minPos.x, maxPos.y), inverse);
-		EJVector2 p4 = EJVector2ApplyTransform(maxPos, inverse);
-
-		// Find the unprojected min/max
-		EJVector2 tmin = { MIN(p1.x, (MIN(p2.x, ( MIN (p3.x, p4.x))))), MIN(p1.y, ( MIN(p2.y, (MIN(p3.y, p4.y))))) };
-		EJVector2 tmax = { MAX(p1.x, (MAX(p2.x, ( MAX (p3.x, p4.x))))), MAX(p1.y, ( MAX(p2.y, (MAX(p3.y, p4.y))))) };
-		context->
-	 		pushFilledRect(tmin.x, tmin.y, tmax.x-tmin.x, tmax.y-tmin.y,
-	 		state->fillObject,
-	 	    EJCanvasBlendWhiteColor(state), transform);
-	}
-	else {
-		context->
-	 	pushRect(minPos.x, minPos.y, maxPos.x-minPos.x, maxPos.y-minPos.y,
-	 	0, 0, 0, 0, EJCanvasBlendFillColor(state), CGAffineTransformIdentity);
-	}
-
+	 context->
+	 	pushRect(minPos.x,minPos.y ,maxPos.x-minPos.x ,maxPos.y-minPos.y
+	 	,0 ,0 ,0 ,0
+	 	,color	,CGAffineTransformIdentity);
 	context->flushBuffers();
 	glDisable(GL_STENCIL_TEST);
 	

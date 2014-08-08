@@ -870,7 +870,10 @@ void EJCanvasContext::clip()
 
 	state->clipPath = (EJPath*)(path->copy());
 	setProgram(sharedGLContext->getGlProgram2DFlat());
-	state->clipPath->drawPolygonsToContext(this, kEJPathPolygonTargetDepth);
+	state->clipPath->drawPolygonsToStencil(this);
+	glStencilFunc(GL_EQUAL, 0x1, 0xFFFFFFFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+	glEnable(GL_STENCIL_TEST);
 }
 
 void EJCanvasContext::resetClip()
@@ -880,10 +883,7 @@ void EJCanvasContext::resetClip()
 		state->clipPath->release();
 		state->clipPath = NULL;
 		
-		glDepthMask(GL_TRUE);
-		glClear(GL_DEPTH_BUFFER_BIT);
-		glDepthMask(GL_FALSE);
-		glDepthFunc(GL_ALWAYS);
+		glDisable(GL_STENCIL_TEST);
 	}
 }
 
