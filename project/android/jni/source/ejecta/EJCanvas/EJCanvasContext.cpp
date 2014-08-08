@@ -67,7 +67,7 @@ EJCanvasContext::EJCanvasContext(short widthp, short heightp) :
 	state->textBaseline = kEJTextBaselineAlphabetic;
 	state->textAlign = kEJTextAlignStart;
 	//state->font = [[UIFont fontWithName:@"Helvetica" size:10] retain];
-	state->font = new UIFont(NSStringMake("simsun.ttc"),32);
+	state->font = new UIFont(NSStringMake("FuturaHv.ttf"),64);
 	state->clipPath = NULL;
 	
 	bufferWidth = width = widthp;

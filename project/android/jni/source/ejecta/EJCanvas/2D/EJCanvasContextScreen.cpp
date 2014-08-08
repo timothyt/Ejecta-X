@@ -20,10 +20,10 @@ EJCanvasContextScreen::~EJCanvasContextScreen()
 
 void EJCanvasContextScreen::present()
 {
-	if(!needsPresenting)
-	{
-		return;
-	}
+	//if(!needsPresenting)
+	//{
+	//	return;
+	//}
 
 	needsPresenting = false;
 

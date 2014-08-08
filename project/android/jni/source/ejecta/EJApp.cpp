@@ -11,6 +11,94 @@
 
 #include <sys/stat.h>
 
+long getNanoTime()
+{
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (unsigned long)now.tv_sec*1000000000LL + now.tv_nsec;
+}
+
+#define MAXSAMPLES 60
+
+class FPSCounter
+{
+private:
+	int tickIndex;
+	unsigned long tickSum;
+	int sampleCount;
+	unsigned long tickList[MAXSAMPLES];
+	unsigned long lastTime;
+
+	void AddMeasurement(long frameTime)
+	{
+		if(frameTime <=0)
+		{
+			return;
+		}
+
+		// If there are any samples, remove the oldest sample from the running total
+		if(sampleCount > 0)
+		{
+			tickSum -= tickList[tickIndex];
+		}
+		tickSum += frameTime;	// add new sample to running total
+		tickList[tickIndex] = frameTime;   // save sample to be removed as it decays off list
+		if(++tickIndex == MAXSAMPLES)   // wrap
+		{
+			tickIndex = 0;
+		}
+		++sampleCount;
+		sampleCount = sampleCount > MAXSAMPLES ? MAXSAMPLES : sampleCount;
+	}
+
+	double GetAverageFrameTime()
+	{
+		return ( ((double)tickSum/sampleCount)/1000000000LL );
+	}
+
+public:
+	FPSCounter()
+	{
+		Clear();
+	}
+
+	void Clear()
+	{
+		tickIndex = 0;
+		tickSum = 0;
+		lastTime = 0;
+		sampleCount = 0;
+		memset(tickList, 0, sizeof(long));
+	}
+
+	void AddFrame()
+	{
+		long currentTime = getNanoTime();
+
+		if(lastTime > 0)
+		{
+			long delta = currentTime - lastTime;
+			if(delta > 0)
+			{
+				AddMeasurement(delta);
+				lastTime = currentTime;
+			}
+		}
+		else
+		{
+			lastTime = currentTime;
+		}
+	}
+
+	float GetCounter()
+	{
+		double frameTime = GetAverageFrameTime();
+		return frameTime > 0.f ? 1.0f/frameTime : 0.f;
+	}
+};
+
+FPSCounter fps;
+
 JSValueRef ej_global_undefined;
 JSClassRef ej_constructorClass;
 
@@ -191,6 +279,8 @@ void EJApp::run(void)
 {
 	if( paused ) { return; }
 
+	fps.AddFrame();
+
 	if (screenRenderingContext)
 	{
 		// Redraw the canvas
@@ -217,7 +307,7 @@ void EJApp::run(void)
 		if (touchDelegate&&touches&&touches->count()>0)
 		{
 			EJTouchEvent* event = (EJTouchEvent*)touches->objectAtIndex(0);
-			NSLOG("event count %d %s(%d, %d)", touches->count(), event->eventName->getCString(), event->posX, event->posY);
+			//NSLOG("event count %d %s(%d, %d)", touches->count(), event->eventName->getCString(), event->posX, event->posY);
 			touchDelegate->triggerEvent(event->eventName, event->posX, event->posY, event->touchId);
 			touches->removeObjectAtIndex(0);
 		}
@@ -226,6 +316,17 @@ void EJApp::run(void)
 
 	// Check all timers
 	timers->update();
+
+
+	if(screenRenderingContext) {
+		glEnable(GL_BLEND);
+		NSString* fpsString =  NSString::createWithFormat("%3.1f", fps.GetCounter());
+		static EJColorRGBA textColor = {0xffffffff};
+		screenRenderingContext->state->fillColor = textColor;
+		screenRenderingContext->fillText(fpsString, 5, 5);
+		screenRenderingContext->flushBuffers();
+		glDisable(GL_BLEND);
+	}
 }
 
 void EJApp::pause(void)
